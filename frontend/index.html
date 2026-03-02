@@ -510,7 +510,8 @@ function resizeCanvas() {
   W = a.clientWidth; H = a.clientHeight;
   canvas.width  = W * devicePixelRatio;
   canvas.height = H * devicePixelRatio;
-  ctx.scale(devicePixelRatio, devicePixelRatio);
+  /* resetting width/height clears the transform — reapply once */
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
@@ -560,10 +561,11 @@ function spawnParticle(type, data) {
 }
 
 let lastTime = 0;
+let rafId = null;
 function draw(ts) {
   const dt = Math.min((ts - lastTime) / 16.67, 3);
   lastTime = ts;
-  requestAnimationFrame(draw);
+  rafId = requestAnimationFrame(draw);
 
   if (viewMode === 'particles') {
     ctx.fillStyle = `rgba(13,13,13,${0.04 + 0.04/globalConfig.decay})`;
@@ -581,18 +583,28 @@ function draw(ts) {
 }
 
 function drawParticles(dt) {
+  /* group by color to minimize ctx state changes */
+  const byCol = {};
   for (let i = particles.length-1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 0.04*dt;
     p.life -= p.decay*dt*globalConfig.decay;
     if (p.life <= 0 || p.y > H+20) { particles.splice(i,1); continue; }
-    ctx.save();
-    ctx.shadowColor = p.col; ctx.shadowBlur = 6*p.glow*globalConfig.brightness;
-    ctx.globalAlpha = Math.min(1,p.life)*globalConfig.brightness;
-    ctx.fillStyle = p.col;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
+    if (!byCol[p.col]) byCol[p.col] = [];
+    byCol[p.col].push(p);
   }
+  /* draw glow pass (one shadow per color group) */
+  ctx.save();
+  for (const [col, ps] of Object.entries(byCol)) {
+    ctx.shadowColor = col;
+    ctx.shadowBlur  = 8 * globalConfig.brightness;
+    ctx.fillStyle   = col;
+    for (const p of ps) {
+      ctx.globalAlpha = Math.min(1, p.life) * globalConfig.brightness;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.restore();
 }
 
 function drawNoteLabels() {
@@ -785,16 +797,18 @@ function parseMidi(buffer) {
   }
 
   if (readUint32() !== 0x4d546864) throw new Error('not a MIDI file');
-  readUint32(); // header length
-  const format   = readUint16();
-  const numTracks= readUint16();
-  const division = readUint16();
+  readUint32();
+  readUint16(); // format
+  const numTracks = readUint16();
+  const division  = readUint16();
 
-  let tempo = 500000; // default 120 BPM
-  const events = [];
+  /* pass 1: collect all raw ticked events + tempo changes from all tracks */
+  const rawEvents  = []; /* { tick, ev } */
+  const tempoMap   = [{ tick: 0, tempo: 500000 }]; /* sorted by tick */
 
   for (let t = 0; t < numTracks; t++) {
-    if (readUint32() !== 0x4d54726b) { pos += view.getUint32(pos)+4; continue; }
+    if (view.getUint32(pos) !== 0x4d54726b) { pos += 4 + view.getUint32(pos+4) + 4; continue; }
+    pos += 4;
     const trackLen = readUint32();
     const trackEnd = pos + trackLen;
     let tick = 0, lastStatus = 0;
@@ -802,59 +816,73 @@ function parseMidi(buffer) {
     while (pos < trackEnd) {
       tick += readVarLen();
       let status = readUint8();
+      if (status & 0x80) { lastStatus = status; } else { pos--; status = lastStatus; }
 
-      if (status & 0x80) { lastStatus = status; }
-      else { pos--; status = lastStatus; }
-
-      const type    = (status >> 4) & 0xf;
+      const msgType = (status >> 4) & 0xf;
       const channel = status & 0xf;
 
-      if (type === 0xf) {
+      if (msgType === 0xf) {
         if (status === 0xff) {
-          const meta = readUint8();
-          const len  = readVarLen();
+          const meta = readUint8(), len = readVarLen();
           if (meta === 0x51 && len === 3) {
-            tempo = (readUint8()<<16)|(readUint8()<<8)|readUint8();
+            const newTempo = (readUint8()<<16)|(readUint8()<<8)|readUint8();
+            /* insert into tempoMap sorted */
+            tempoMap.push({ tick, tempo: newTempo });
           } else { pos += len; }
         } else if (status === 0xf0 || status === 0xf7) {
-          const len = readVarLen(); pos += len;
-        } else { /* other sys */ }
+          pos += readVarLen();
+        }
         continue;
       }
 
       let ev = null;
-      if (type === 0x9) {
+      if (msgType === 0x9) {
         const key=readUint8(), vel=readUint8();
-        ev = { type: vel>0?'note_on':'note_off', channel, key, note: NOTE_NAMES[key%12]+Math.floor(key/12-1), velocity:vel };
-      } else if (type === 0x8) {
+        ev = { type: vel>0?'note_on':'note_off', channel, key, note:NOTE_NAMES[key%12]+Math.floor(key/12-1), velocity:vel };
+      } else if (msgType === 0x8) {
         const key=readUint8(); readUint8();
-        ev = { type:'note_off', channel, key, note: NOTE_NAMES[key%12]+Math.floor(key/12-1) };
-      } else if (type === 0xb) {
+        ev = { type:'note_off', channel, key, note:NOTE_NAMES[key%12]+Math.floor(key/12-1) };
+      } else if (msgType === 0xb) {
         const ctrl=readUint8(), val=readUint8();
         ev = { type:'cc', channel, controller:ctrl, value:val };
-      } else if (type === 0xe) {
+      } else if (msgType === 0xe) {
         const lo=readUint8(), hi=readUint8();
-        ev = { type:'pitch', channel, value:(hi<<7)|lo - 8192 };
-      } else if (type === 0xc) {
-        const prog=readUint8();
-        ev = { type:'program', channel, program:prog };
-      } else if (type === 0xd) {
-        const pres=readUint8();
-        ev = { type:'aftertouch', channel, pressure:pres };
-      } else if (type === 0xa) {
+        ev = { type:'pitch', channel, value:((hi<<7)|lo)-8192 };
+      } else if (msgType === 0xc) {
+        ev = { type:'program', channel, program:readUint8() };
+      } else if (msgType === 0xd) {
+        ev = { type:'aftertouch', channel, pressure:readUint8() };
+      } else if (msgType === 0xa) {
         const key=readUint8(), pres=readUint8();
         ev = { type:'poly_aftertouch', channel, key, note:NOTE_NAMES[key%12]+Math.floor(key/12-1), pressure:pres };
-      } else {
-        /* unknown — skip 1 byte */
-        readUint8();
-      }
+      } else { readUint8(); }
 
-      if (ev) events.push({ tick, tempo, ev });
+      if (ev) rawEvents.push({ tick, ev });
     }
     pos = trackEnd;
   }
 
-  return { division, events };
+  /* sort tempo map and raw events by tick */
+  tempoMap.sort((a,b) => a.tick - b.tick);
+  rawEvents.sort((a,b) => a.tick - b.tick);
+
+  /* pass 2: convert ticks → real milliseconds using tempo map */
+  let tmIdx = 0, curTempo = 500000, curTick = 0, curMs = 0;
+
+  const events = rawEvents.map(({ tick, ev }) => {
+    /* advance tempo map */
+    while (tmIdx + 1 < tempoMap.length && tempoMap[tmIdx+1].tick <= tick) {
+      const next = tempoMap[tmIdx+1];
+      curMs   += (next.tick - curTick) / division * curTempo / 1000;
+      curTick  = next.tick;
+      curTempo = next.tempo;
+      tmIdx++;
+    }
+    const ms = curMs + (tick - curTick) / division * curTempo / 1000;
+    return { ms, ev };
+  });
+
+  return events;
 }
 
 let playbackTimer = null;
@@ -873,7 +901,7 @@ function playMidi(buffer) {
   setStatus('on','playing');
   document.getElementById('canvas-overlay').classList.add('hidden');
 
-  let currentTick = 0, currentTempo = 500000;
+  const startTime = performance.now();
   let idx = 0;
 
   function scheduleNext() {
@@ -883,16 +911,14 @@ function playMidi(buffer) {
       document.getElementById('play-btn').disabled = false;
       return;
     }
-    const { tick, ev } = events[idx];
-    const deltaTick = tick - currentTick;
-    const deltaMs   = (deltaTick / division) * (currentTempo / 1000);
-    currentTick = tick;
+    const { ms, ev } = events[idx];
+    const delay = ms - (performance.now() - startTime);
     idx++;
     playbackTimer = setTimeout(() => {
       ev._local = true;
       handleEvent(ev);
       scheduleNext();
-    }, deltaMs);
+    }, Math.max(0, delay));
   }
   scheduleNext();
 }
