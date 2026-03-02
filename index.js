@@ -1,6 +1,10 @@
 const http = require('http');
+const fs   = require('fs');
+const path = require('path');
 const { WebSocketServer } = require('ws');
 const { nanoid } = require('nanoid');
+
+const FRONTEND = path.join(__dirname, 'frontend', 'index.html');
 
 const PORT = process.env.PORT || 3000;
 
@@ -24,6 +28,16 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200);
     res.end('ok');
+    return;
+  }
+
+  /* GET / — serve frontend */
+  if (req.method === 'GET') {
+    fs.readFile(FRONTEND, (err, data) => {
+      if (err) { res.writeHead(404); res.end('not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(data);
+    });
     return;
   }
 
