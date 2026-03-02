@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI DISCOVERY</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans+Condensed:wght@300;400;600&display=swap');
+
+:root {
+  --bg:        #0d0d0d;
+  --panel:     #141414;
+  --panel2:    #1a1a1a;
+  --border:    #262626;
+  --border2:   #333;
+  --amber:     #e8a830;
+  --amber-dim: #7a5518;
+  --cyan:      #30d4c8;
+  --green:     #50e060;
+  --red:       #e05050;
+  --text:      #c8c8c8;
+  --text-dim:  #666;
+  --text-mid:  #999;
+  --mono:      'IBM Plex Mono', monospace;
+  --sans:      'IBM Plex Sans Condensed', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  display: grid;
+  grid-template-rows: 42px 1fr 32px;
+  grid-template-columns: 1fr 280px;
+  grid-template-areas:
+    "header header"
+    "canvas inspector"
+    "log    log";
+  height: 100vh;
+}
+
+/* ── HEADER ── */
+header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  padding: 0 16px;
+  gap: 0;
+  overflow: hidden;
+}
+
+.hdr-brand {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--amber);
+  margin-right: 20px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.hdr-sep { width: 1px; height: 20px; background: var(--border); margin: 0 12px; flex-shrink: 0; }
+
+.hdr-status { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+#status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-dim);
+  transition: background 0.3s, box-shadow 0.3s;
+  flex-shrink: 0;
+}
+#status-dot.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+#status-dot.err { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+#status-text { color: var(--text-dim); font-size: 11px; width: 80px; flex-shrink: 0; }
+
+.btn {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text-mid);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--amber-dim); color: var(--amber); }
+.btn.primary { border-color: var(--amber-dim); color: var(--amber); }
+.btn.primary:hover { background: rgba(232,168,48,0.08); border-color: var(--amber); }
+.btn:disabled { border-color: var(--border); color: #444; cursor: default; }
+.btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(48,212,200,0.06); }
+
+#file-input { display: none; }
+#pick-btn { margin-right: 6px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+
+/* share / room */
+.room-section { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+#room-url {
+  background: var(--panel2);
+  border: 1px solid var(--border2);
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  width: 200px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#room-url:focus { outline: none; border-color: var(--cyan); }
+#room-url::placeholder { color: #444; }
+
+.peers-badge {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.peers-badge span { color: var(--cyan); }
+
+/* midi source toggle */
+.source-tabs { display: flex; gap: 0; flex-shrink: 0; }
+.source-tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-right: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.source-tab:last-child { border-right: 1px solid var(--border); }
+.source-tab.active { background: rgba(232,168,48,0.1); color: var(--amber); border-color: var(--amber-dim); }
+
+/* view tabs */
+.view-tabs { display: flex; gap: 0; flex-shrink: 0; }
+.view-tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-right: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.view-tab:last-child { border-right: 1px solid var(--border); }
+.view-tab.active { background: rgba(232,168,48,0.1); color: var(--amber); border-color: var(--amber-dim); }
+
+.hdr-spacer { flex: 1; }
+#last-event {
+  color: var(--cyan); font-size: 11px; letter-spacing: 0.05em;
+  flex-shrink: 0; max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-right: 8px;
+}
+
+/* ── CANVAS ── */
+#canvas-area {
+  grid-area: canvas;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+canvas#viz { position: absolute; inset: 0; width: 100%; height: 100%; }
+#canvas-area::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+  pointer-events: none; z-index: 10;
+}
+
+#piano-wrap {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 100px;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: linear-gradient(to top, rgba(13,13,13,0.95) 60%, transparent);
+  z-index: 5; overflow: hidden;
+}
+#piano { position: relative; flex-shrink: 0; height: 80px; }
+.wk {
+  position: absolute; bottom: 0; width: 14px; height: 80px;
+  background: #c8c8c8; border: 1px solid #888; border-radius: 0 0 2px 2px;
+  transition: background 60ms;
+}
+.bk {
+  position: absolute; bottom: 28px; width: 9px; height: 50px;
+  background: #111; border: 1px solid #333; border-radius: 0 0 2px 2px;
+  z-index: 2; transition: background 60ms;
+}
+
+#canvas-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 3; pointer-events: none; gap: 8px;
+  opacity: 1; transition: opacity 0.6s;
+}
+#canvas-overlay.hidden { opacity: 0; }
+.overlay-big {
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim);
+}
+.overlay-small { font-size: 10px; color: #444; letter-spacing: 0.08em; }
+
+/* ── INSPECTOR ── */
+#inspector {
+  grid-area: inspector;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.insp-header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.insp-title {
+  font-family: var(--sans); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim);
+}
+.insp-body { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+
+.type-block { border-bottom: 1px solid var(--border); }
+.type-block-header {
+  padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none; transition: background 0.1s;
+}
+.type-block-header:hover { background: rgba(255,255,255,0.02); }
+
+.type-toggle {
+  width: 24px; height: 13px; border-radius: 7px;
+  background: var(--border2); border: none;
+  position: relative; cursor: pointer; flex-shrink: 0; transition: background 0.2s;
+}
+.type-toggle::after {
+  content: ''; position: absolute; left: 2px; top: 2px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #666; transition: transform 0.2s, background 0.2s;
+}
+.type-toggle.on { background: rgba(232,168,48,0.25); }
+.type-toggle.on::after { transform: translateX(11px); background: var(--amber); }
+
+.type-name { font-size: 11px; color: var(--text-mid); flex: 1; letter-spacing: 0.04em; }
+.type-block-header.active .type-name { color: var(--text); }
+.type-chip { font-size: 9px; padding: 1px 5px; border-radius: 2px; letter-spacing: 0.05em; border: 1px solid transparent; }
+.type-counter { font-size: 10px; color: var(--text-dim); min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.expand-arrow { font-size: 9px; color: var(--text-dim); transition: transform 0.2s; flex-shrink: 0; }
+.type-block-header.open .expand-arrow { transform: rotate(90deg); }
+
+.type-block-body {
+  display: none; padding: 6px 12px 10px 44px;
+  background: rgba(0,0,0,0.2); flex-direction: column; gap: 8px;
+}
+.type-block-body.open { display: flex; }
+
+.prop-row { display: flex; align-items: center; gap: 8px; }
+.prop-label { font-size: 10px; color: var(--text-dim); width: 64px; flex-shrink: 0; }
+.prop-slider {
+  -webkit-appearance: none; appearance: none;
+  flex: 1; height: 2px; background: var(--border2); outline: none; border: none; cursor: pointer;
+}
+.prop-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--amber); cursor: pointer;
+}
+.prop-value { font-size: 10px; color: var(--amber); width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+.prop-color { width: 22px; height: 16px; border: 1px solid var(--border2); border-radius: 2px; padding: 0; cursor: pointer; flex-shrink: 0; }
+
+.global-section { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.global-section-title { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+
+/* midi device selector */
+.midi-device-row { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.midi-device-label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+#midi-device-select {
+  width: 100%; background: var(--panel2); border: 1px solid var(--border2);
+  color: var(--text-mid); font-family: var(--mono); font-size: 10px;
+  padding: 4px 6px; cursor: pointer;
+}
+#midi-device-select:focus { outline: none; border-color: var(--amber-dim); }
+
+/* ── LOG BAR ── */
+#log-bar {
+  grid-area: log; background: var(--panel); border-top: 1px solid var(--border);
+  display: flex; align-items: center; overflow: hidden; padding: 0 8px;
+}
+.log-label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-right: 10px; flex-shrink: 0; }
+#log-scroll { flex: 1; overflow: hidden; display: flex; gap: 8px; }
+.log-entry {
+  flex-shrink: 0; font-size: 10px; padding: 2px 6px;
+  border: 1px solid var(--border); border-radius: 2px;
+  white-space: nowrap; opacity: 1; transition: opacity 4s;
+}
+.log-entry.fading { opacity: 0.15; }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hdr-brand">MIDI DISCOVERY</span>
+
+  <div class="hdr-status">
+    <div id="status-dot"></div>
+    <span id="status-text">idle</span>
+  </div>
+
+  <div class="hdr-sep"></div>
+
+  <!-- source: file or live -->
+  <div class="source-tabs">
+    <button class="source-tab active" data-source="file">file</button>
+    <button class="source-tab" data-source="live">live</button>
+  </div>
+
+  <div class="hdr-sep"></div>
+
+  <!-- file controls (shown in file mode) -->
+  <div id="file-controls" style="display:flex;align-items:center;gap:6px">
+    <label id="pick-btn" class="btn" for="file-input">choose .mid</label>
+    <input type="file" id="file-input" accept=".mid,.midi">
+    <button id="play-btn" class="btn primary" disabled>&#9654; play</button>
+  </div>
+
+  <!-- live controls (hidden by default) -->
+  <div id="live-controls" style="display:none;align-items:center;gap:6px">
+    <button id="midi-connect-btn" class="btn primary">connect MIDI</button>
+  </div>
+
+  <div class="hdr-sep"></div>
+
+  <!-- room / share -->
+  <div class="room-section">
+    <button id="share-btn" class="btn">⇧ share</button>
+    <input id="room-url" type="text" placeholder="room url appears here" readonly>
+    <span class="peers-badge">peers: <span id="peer-count">0</span></span>
+  </div>
+
+  <div class="hdr-sep"></div>
+
+  <!-- view modes -->
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="particles">particles</button>
+    <button class="view-tab" data-view="piano">piano</button>
+    <button class="view-tab" data-view="scope">scope</button>
+    <button class="view-tab" data-view="grid">grid</button>
+  </div>
+
+  <div class="hdr-spacer"></div>
+  <span id="last-event"></span>
+</header>
+
+<div id="canvas-area">
+  <canvas id="viz"></canvas>
+  <div id="canvas-overlay">
+    <span class="overlay-big">choose a source to begin</span>
+    <span class="overlay-small">file · live MIDI · or open a shared link</span>
+  </div>
+  <div id="piano-wrap"><div id="piano"></div></div>
+</div>
+
+<div id="inspector">
+  <div class="insp-header">
+    <span class="insp-title">signal config</span>
+  </div>
+  <div class="insp-body">
+
+    <!-- MIDI device picker (live mode) -->
+    <div class="midi-device-row" id="midi-device-row" style="display:none">
+      <div class="midi-device-label">MIDI input</div>
+      <select id="midi-device-select"><option value="">— no devices —</option></select>
+    </div>
+
+    <!-- Global -->
+    <div class="global-section">
+      <div class="global-section-title">global</div>
+      <div class="prop-row">
+        <span class="prop-label">decay</span>
+        <input type="range" class="prop-slider" id="g-decay" min="0.5" max="5" step="0.1" value="2.0">
+        <span class="prop-value" id="g-decay-val">2.0</span>
+      </div>
+      <div class="prop-row" style="margin-top:6px">
+        <span class="prop-label">brightness</span>
+        <input type="range" class="prop-slider" id="g-bright" min="0.1" max="2.0" step="0.05" value="1.0">
+        <span class="prop-value" id="g-bright-val">1.0</span>
+      </div>
+      <div class="prop-row" style="margin-top:6px">
+        <span class="prop-label">piano</span>
+        <input type="range" class="prop-slider" id="g-piano" min="0" max="1" step="1" value="1">
+        <span class="prop-value" id="g-piano-val">on</span>
+      </div>
+    </div>
+
+    <div id="type-blocks"></div>
+  </div>
+</div>
+
+<div id="log-bar">
+  <span class="log-label">log</span>
+  <div id="log-scroll"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════ */
+const SERVER = (() => {
+  const p = new URLSearchParams(location.search);
+  if (p.get('server')) return p.get('server').replace(/\/$/, '');
+  /* in production same host; locally point to node server */
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+  return location.origin;
+})();
+
+const WS_SERVER = SERVER.replace(/^http/, 'ws');
+
+const WHITE_SET  = new Set([0,2,4,5,7,9,11]);
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+const MIDI_TYPES = [
+  { id: 'note_on',         label: 'note on',       color: '#e8a830', defaultOn: true  },
+  { id: 'note_off',        label: 'note off',       color: '#50a0e8', defaultOn: false },
+  { id: 'cc',              label: 'control change', color: '#30d4c8', defaultOn: true  },
+  { id: 'pitch',           label: 'pitch bend',     color: '#e050a0', defaultOn: true  },
+  { id: 'program',         label: 'program change', color: '#80e050', defaultOn: true  },
+  { id: 'aftertouch',      label: 'aftertouch',     color: '#e07030', defaultOn: false },
+  { id: 'poly_aftertouch', label: 'poly touch',     color: '#a050e0', defaultOn: false },
+  { id: 'sysex',           label: 'sysex',          color: '#e03030', defaultOn: false },
+];
+
+const typeConfig = {};
+MIDI_TYPES.forEach(t => {
+  typeConfig[t.id] = { enabled: t.defaultOn, color: t.color, size: 1.0, glow: 1.0 };
+});
+
+const globalConfig = { decay: 2.0, brightness: 1.0, piano: true };
+const counters     = {};
+MIDI_TYPES.forEach(t => counters[t.id] = 0);
+const activeNotes  = {};
+let   viewMode     = 'particles';
+let   sourceMode   = 'file'; /* 'file' | 'live' */
+
+/* ═══════════════════════════════════════════════
+   PIANO
+═══════════════════════════════════════════════ */
+const pianoEl   = document.getElementById('piano');
+const pianoWrap = document.getElementById('piano-wrap');
+const keyElems  = {};
+const whiteX    = {};
+const KW = 14;
+
+let wx = 0;
+for (let n = 21; n <= 108; n++) {
+  if (WHITE_SET.has(n % 12)) { whiteX[n] = wx; wx += KW + 1; }
+}
+for (let n = 21; n <= 108; n++) {
+  const isWhite = WHITE_SET.has(n % 12);
+  const el = document.createElement('div');
+  el.className = isWhite ? 'wk' : 'bk';
+  el.style.left = (isWhite ? whiteX[n] : whiteX[n - 1] + KW - 4) + 'px';
+  pianoEl.appendChild(el);
+  keyElems[n] = { el, isWhite };
+}
+pianoEl.style.width = wx + 'px';
+
+function noteOnPiano(key) {
+  const e = keyElems[key]; if (!e) return;
+  const col = typeConfig['note_on'].color;
+  e.el.style.background  = col;
+  e.el.style.boxShadow   = `0 0 8px ${col}88`;
+}
+function noteOffPiano(key) {
+  const e = keyElems[key]; if (!e) return;
+  e.el.style.background = '';
+  e.el.style.boxShadow  = '';
+}
+function allNotesOff() {
+  Object.keys(keyElems).forEach(k => noteOffPiano(Number(k)));
+  Object.keys(activeNotes).forEach(k => delete activeNotes[k]);
+}
+
+/* ═══════════════════════════════════════════════
+   CANVAS
+═══════════════════════════════════════════════ */
+const canvas = document.getElementById('viz');
+const ctx    = canvas.getContext('2d');
+let W = 0, H = 0;
+
+function resizeCanvas() {
+  const a = document.getElementById('canvas-area');
+  W = a.clientWidth; H = a.clientHeight;
+  canvas.width  = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const particles  = [];
+const scopeData  = [];
+const SCOPE_BUF  = 200;
+const noteGrid   = new Array(88).fill(null);
+
+function spawnParticle(type, data) {
+  const cfg = typeConfig[type];
+  if (!cfg?.enabled) return;
+  const col = cfg.color;
+
+  if (type === 'note_on') {
+    const k = data.key || 60;
+    const t = (k - 21) / 87;
+    const x = W * 0.05 + t * W * 0.9;
+    const y = H * 0.35 + (1 - data.velocity / 127) * H * 0.3;
+    const burst = Math.floor(3 + data.velocity / 20);
+    for (let i = 0; i < burst; i++) {
+      const ba = Math.random() * Math.PI * 2;
+      const bs = 0.3 + Math.random() * 1.5;
+      particles.push({ x, y, vx: Math.cos(ba)*bs, vy: Math.sin(ba)*bs - 1,
+        size: (1 + Math.random()*2)*cfg.size, life: 0.6+Math.random()*0.4,
+        decay: 0.008+Math.random()*0.012, col, glow: cfg.glow });
+    }
+    const speed = 1 + (data.velocity/127)*3;
+    const angle = -Math.PI/2 + (Math.random()-0.5)*0.8;
+    particles.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed - Math.random()*1.5,
+      size: (3+data.velocity/30)*cfg.size, life: 1, decay: 0.006, col, glow: cfg.glow });
+  } else if (type === 'cc') {
+    const x = W*0.1 + (data.controller/127)*W*0.8;
+    const y = H*0.6 + (1-data.value/127)*H*0.25;
+    particles.push({ x, y, vx:(Math.random()-0.5)*1.5, vy:-0.5-Math.random(),
+      size:3*cfg.size, life:1, decay:0.007, col, glow:cfg.glow });
+  } else if (type === 'pitch') {
+    const norm = (data.value+8192)/16384;
+    particles.push({ x:W*0.5, y:H*0.5+(0.5-norm)*H*0.3,
+      vx:(Math.random()-0.5)*2, vy:(Math.random()-0.5)*2,
+      size:5*cfg.size, life:1, decay:0.006, col, glow:cfg.glow });
+  } else {
+    particles.push({ x:Math.random()*W, y:Math.random()*H*0.7,
+      vx:(Math.random()-0.5)*1.5, vy:-0.5-Math.random()*1.5,
+      size:3*cfg.size, life:1, decay:0.007, col, glow:cfg.glow });
+  }
+}
+
+let lastTime = 0;
+function draw(ts) {
+  const dt = Math.min((ts - lastTime) / 16.67, 3);
+  lastTime = ts;
+  requestAnimationFrame(draw);
+
+  if (viewMode === 'particles') {
+    ctx.fillStyle = `rgba(13,13,13,${0.04 + 0.04/globalConfig.decay})`;
+    ctx.fillRect(0, 0, W, H);
+    drawParticles(dt);
+    drawNoteLabels();
+  } else {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0d0d0d';
+    ctx.fillRect(0, 0, W, H);
+    if (viewMode === 'piano')  drawPianoView();
+    if (viewMode === 'scope')  drawScope();
+    if (viewMode === 'grid')   drawGrid();
+  }
+}
+
+function drawParticles(dt) {
+  for (let i = particles.length-1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 0.04*dt;
+    p.life -= p.decay*dt*globalConfig.decay;
+    if (p.life <= 0 || p.y > H+20) { particles.splice(i,1); continue; }
+    ctx.save();
+    ctx.shadowColor = p.col; ctx.shadowBlur = 6*p.glow*globalConfig.brightness;
+    ctx.globalAlpha = Math.min(1,p.life)*globalConfig.brightness;
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawNoteLabels() {
+  const active = Object.entries(activeNotes);
+  if (!active.length) return;
+  ctx.save();
+  ctx.font = '400 11px monospace';
+  active.forEach(([key]) => {
+    const k = Number(key);
+    const x = W*0.05 + ((k-21)/87)*W*0.9;
+    const col = typeConfig['note_on'].color;
+    ctx.fillStyle = col+'cc'; ctx.shadowColor = col; ctx.shadowBlur = 8;
+    ctx.fillText(NOTE_NAMES[k%12]+Math.floor(k/12-1), x-8, H*0.3);
+  });
+  ctx.restore();
+}
+
+function drawPianoView() {
+  const keysW = 44, noteH = (H-20)/88;
+  for (let i = 0; i <= 88; i++) {
+    const y = i*noteH+10, n = 108-i;
+    if (!WHITE_SET.has(n%12)) { ctx.fillStyle='#111'; ctx.fillRect(keysW,y,W-keysW,noteH); }
+    ctx.strokeStyle='#1e1e1e'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(keysW,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+  for (let i = 0; i < 88; i++) {
+    const n=108-i, y=i*noteH+10, active=noteGrid[n-21];
+    ctx.fillStyle = active ? typeConfig['note_on'].color : WHITE_SET.has(n%12) ? '#282828' : '#111';
+    ctx.fillRect(2, y+0.5, keysW-6, noteH-1);
+    if (n%12===0) { ctx.fillStyle='#444'; ctx.font='8px monospace'; ctx.fillText('C'+Math.floor(n/12-1),2,y+noteH); }
+  }
+  for (let i = 0; i < 88; i++) {
+    const nd=noteGrid[i]; if (!nd) continue;
+    const n=i+21, row=108-n, y=row*noteH+10, col=typeConfig['note_on'].color;
+    ctx.save(); ctx.globalAlpha=0.5+(nd.vel/127)*0.5;
+    ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=4;
+    ctx.fillRect(keysW+2, y+1, W-keysW-4, noteH-2); ctx.restore();
+  }
+}
+
+function drawScope() {
+  if (scopeData.length < 2) { ctx.fillStyle='#333'; ctx.font='11px monospace'; ctx.fillText('no data',W/2-24,H/2); return; }
+  const [pL,pR,pT,pB] = [48,20,30,30];
+  const pW=W-pL-pR, pH=H-pT-pB;
+  ctx.strokeStyle='#1e1e1e'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(pL,pT); ctx.lineTo(pL,pT+pH); ctx.lineTo(pL+pW,pT+pH); ctx.stroke();
+  for (let v=0; v<=1; v+=0.25) {
+    const y=pT+pH*(1-v);
+    ctx.strokeStyle='#181818'; ctx.beginPath(); ctx.moveTo(pL,y); ctx.lineTo(pL+pW,y); ctx.stroke();
+    ctx.fillStyle='#444'; ctx.font='9px monospace'; ctx.fillText(v.toFixed(2),pL-34,y+3);
+  }
+  const lines = {};
+  scopeData.forEach((d,i) => { if (!lines[d.type]) lines[d.type]=[]; lines[d.type].push({i,val:d.val}); });
+  let li=0;
+  Object.entries(lines).forEach(([type,pts]) => {
+    const cfg=typeConfig[type]; if (!cfg?.enabled) return;
+    ctx.save(); ctx.strokeStyle=cfg.color; ctx.lineWidth=1.5; ctx.shadowColor=cfg.color; ctx.shadowBlur=3;
+    ctx.beginPath();
+    pts.forEach((p,idx) => {
+      const x=pL+(p.i/(SCOPE_BUF-1))*pW, y=pT+pH*(1-p.val);
+      idx===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    if (pts.length) {
+      const last=pts[pts.length-1];
+      ctx.fillStyle=cfg.color; ctx.shadowBlur=8;
+      ctx.beginPath(); ctx.arc(pL+(last.i/(SCOPE_BUF-1))*pW, pT+pH*(1-last.val), 3, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle=cfg.color; ctx.font='9px monospace'; ctx.fillText(type.replace('_',' '),pL+8+li*90,pT-8);
+    li++; ctx.restore();
+  });
+}
+
+function drawGrid() {
+  const cols=88, cW=(W-40)/cols, cH=32, rows=Math.floor((H-30)/cH);
+  ctx.font='8px monospace';
+  for (let c=0; c<cols; c++) {
+    const n=21+c;
+    if (n%12===0) { ctx.fillStyle='#555'; ctx.fillText('C'+Math.floor(n/12-1),20+c*cW,14); }
+    if (!WHITE_SET.has(n%12)) { ctx.fillStyle='rgba(255,255,255,0.015)'; ctx.fillRect(20+c*cW,18,cW-0.5,rows*cH); }
+  }
+  const now=performance.now();
+  for (let c=0; c<cols; c++) {
+    const nd=noteGrid[c]; if (!nd) continue;
+    const alpha=Math.max(0,1-(now-nd.time)/2000);
+    const col=typeConfig['note_on'].color;
+    ctx.save(); ctx.globalAlpha=alpha*globalConfig.brightness;
+    ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8;
+    const cellH=Math.min(rows*cH,(nd.vel/127)*rows*cH);
+    ctx.fillRect(20+c*cW+0.5,18+(rows*cH-cellH),cW-1,cellH); ctx.restore();
+  }
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=0.5;
+  for (let c=0; c<=cols; c++) { const x=20+c*cW; ctx.beginPath(); ctx.moveTo(x,18); ctx.lineTo(x,18+rows*cH); ctx.stroke(); }
+  for (let r=0; r<=rows; r++) {
+    const y=18+r*cH; ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(20+cols*cW,y); ctx.stroke();
+    if (r>0) { ctx.fillStyle='#333'; ctx.font='8px monospace'; ctx.fillText((r*127/rows|0),2,y+3); }
+  }
+}
+
+requestAnimationFrame(draw);
+
+/* ═══════════════════════════════════════════════
+   EVENT HANDLER (shared by all sources)
+═══════════════════════════════════════════════ */
+function handleEvent(ev) {
+  /* only forward to peers if WE produced the event (not if we received it from a peer) */
+  if (ev._local) {
+    rtcBroadcast(ev);
+    delete ev._local;
+  }
+
+  const cfg = typeConfig[ev.type];
+  if (cfg?.enabled) spawnParticle(ev.type, ev);
+
+  /* scope */
+  let sv = 0.5;
+  if (ev.type==='note_on')    sv = ev.velocity/127;
+  else if (ev.type==='note_off')   sv = 0;
+  else if (ev.type==='cc')         sv = ev.value/127;
+  else if (ev.type==='pitch')      sv = (ev.value+8192)/16384;
+  else if (ev.type==='aftertouch') sv = ev.pressure/127;
+  scopeData.push({ val:sv, col:cfg?.color||'#444', type:ev.type });
+  if (scopeData.length > SCOPE_BUF) scopeData.shift();
+
+  /* grid + piano */
+  if (ev.type==='note_on' && ev.velocity>0) {
+    noteGrid[ev.key-21] = { vel:ev.velocity, ch:ev.channel, time:performance.now() };
+    noteOnPiano(ev.key);
+    activeNotes[ev.key] = { velocity:ev.velocity };
+  } else if (ev.type==='note_off' || (ev.type==='note_on' && ev.velocity===0)) {
+    noteGrid[ev.key-21] = null;
+    noteOffPiano(ev.key);
+    delete activeNotes[ev.key];
+  }
+
+  /* counter */
+  if (counters[ev.type] !== undefined) {
+    counters[ev.type]++;
+    const el = document.getElementById('cnt-'+ev.type);
+    if (el) el.textContent = counters[ev.type];
+  }
+
+  addLog(ev);
+
+  let desc = ev.type.replace(/_/g,' ');
+  if (ev.note)       desc += ' '+ev.note;
+  if (ev.velocity !== undefined) desc += ' v'+ev.velocity;
+  if (ev.value !== undefined && ev.type!=='note_on') desc += ' ='+ev.value;
+  document.getElementById('last-event').textContent = desc;
+
+  document.getElementById('canvas-overlay').classList.add('hidden');
+}
+
+/* ═══════════════════════════════════════════════
+   LOG
+═══════════════════════════════════════════════ */
+const logScroll = document.getElementById('log-scroll');
+function addLog(ev) {
+  const cfg = typeConfig[ev.type]; if (!cfg?.enabled) return;
+  const el = document.createElement('span');
+  el.className = 'log-entry';
+  el.style.borderColor = cfg.color+'66';
+  el.style.color = cfg.color;
+  let t = ev.type.replace('_',' ');
+  if (ev.note)       t += ' '+ev.note;
+  if (ev.velocity !== undefined) t += ' v'+ev.velocity;
+  if (ev.controller !== undefined) t += ' cc'+ev.controller+'='+ev.value;
+  if (ev.program !== undefined)    t += ' #'+ev.program;
+  el.textContent = t;
+  logScroll.prepend(el);
+  setTimeout(() => el.classList.add('fading'), 2000);
+  while (logScroll.children.length > 20) logScroll.removeChild(logScroll.lastChild);
+}
+
+/* ═══════════════════════════════════════════════
+   SOURCE: FILE (.mid via SSE — optional legacy)
+   Here we parse .mid in the browser directly
+═══════════════════════════════════════════════ */
+function parseMidi(buffer) {
+  const view = new DataView(buffer);
+  let pos = 0;
+
+  function readUint32() { const v=view.getUint32(pos); pos+=4; return v; }
+  function readUint16() { const v=view.getUint16(pos); pos+=2; return v; }
+  function readUint8()  { return view.getUint8(pos++); }
+  function readVarLen() {
+    let v=0, b;
+    do { b=readUint8(); v=(v<<7)|(b&0x7f); } while (b&0x80);
+    return v;
+  }
+
+  if (readUint32() !== 0x4d546864) throw new Error('not a MIDI file');
+  readUint32(); // header length
+  const format   = readUint16();
+  const numTracks= readUint16();
+  const division = readUint16();
+
+  let tempo = 500000; // default 120 BPM
+  const events = [];
+
+  for (let t = 0; t < numTracks; t++) {
+    if (readUint32() !== 0x4d54726b) { pos += view.getUint32(pos)+4; continue; }
+    const trackLen = readUint32();
+    const trackEnd = pos + trackLen;
+    let tick = 0, lastStatus = 0;
+
+    while (pos < trackEnd) {
+      tick += readVarLen();
+      let status = readUint8();
+
+      if (status & 0x80) { lastStatus = status; }
+      else { pos--; status = lastStatus; }
+
+      const type    = (status >> 4) & 0xf;
+      const channel = status & 0xf;
+
+      if (type === 0xf) {
+        if (status === 0xff) {
+          const meta = readUint8();
+          const len  = readVarLen();
+          if (meta === 0x51 && len === 3) {
+            tempo = (readUint8()<<16)|(readUint8()<<8)|readUint8();
+          } else { pos += len; }
+        } else if (status === 0xf0 || status === 0xf7) {
+          const len = readVarLen(); pos += len;
+        } else { /* other sys */ }
+        continue;
+      }
+
+      let ev = null;
+      if (type === 0x9) {
+        const key=readUint8(), vel=readUint8();
+        ev = { type: vel>0?'note_on':'note_off', channel, key, note: NOTE_NAMES[key%12]+Math.floor(key/12-1), velocity:vel };
+      } else if (type === 0x8) {
+        const key=readUint8(); readUint8();
+        ev = { type:'note_off', channel, key, note: NOTE_NAMES[key%12]+Math.floor(key/12-1) };
+      } else if (type === 0xb) {
+        const ctrl=readUint8(), val=readUint8();
+        ev = { type:'cc', channel, controller:ctrl, value:val };
+      } else if (type === 0xe) {
+        const lo=readUint8(), hi=readUint8();
+        ev = { type:'pitch', channel, value:(hi<<7)|lo - 8192 };
+      } else if (type === 0xc) {
+        const prog=readUint8();
+        ev = { type:'program', channel, program:prog };
+      } else if (type === 0xd) {
+        const pres=readUint8();
+        ev = { type:'aftertouch', channel, pressure:pres };
+      } else if (type === 0xa) {
+        const key=readUint8(), pres=readUint8();
+        ev = { type:'poly_aftertouch', channel, key, note:NOTE_NAMES[key%12]+Math.floor(key/12-1), pressure:pres };
+      } else {
+        /* unknown — skip 1 byte */
+        readUint8();
+      }
+
+      if (ev) events.push({ tick, tempo, ev });
+    }
+    pos = trackEnd;
+  }
+
+  return { division, events };
+}
+
+let playbackTimer = null;
+
+function playMidi(buffer) {
+  if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
+  allNotesOff();
+
+  let parsed;
+  try { parsed = parseMidi(buffer); }
+  catch (e) { setStatus('err','parse error'); return; }
+
+  const { division, events } = parsed;
+  if (!events.length) return;
+
+  setStatus('on','playing');
+  document.getElementById('canvas-overlay').classList.add('hidden');
+
+  let currentTick = 0, currentTempo = 500000;
+  let idx = 0;
+
+  function scheduleNext() {
+    if (idx >= events.length) {
+      setStatus('','done');
+      allNotesOff();
+      document.getElementById('play-btn').disabled = false;
+      return;
+    }
+    const { tick, ev } = events[idx];
+    const deltaTick = tick - currentTick;
+    const deltaMs   = (deltaTick / division) * (currentTempo / 1000);
+    currentTick = tick;
+    idx++;
+    playbackTimer = setTimeout(() => {
+      ev._local = true;
+      handleEvent(ev);
+      scheduleNext();
+    }, deltaMs);
+  }
+  scheduleNext();
+}
+
+/* ═══════════════════════════════════════════════
+   SOURCE: WEB MIDI API
+═══════════════════════════════════════════════ */
+let midiAccess    = null;
+let midiInput     = null;
+
+async function initWebMidi() {
+  if (!navigator.requestMIDIAccess) {
+    alert('Web MIDI API not supported in this browser. Use Chrome or Edge.');
+    return;
+  }
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    populateMidiDevices();
+    midiAccess.onstatechange = populateMidiDevices;
+    setStatus('on','MIDI ready');
+  } catch (e) {
+    setStatus('err','MIDI denied');
+  }
+}
+
+function populateMidiDevices() {
+  const sel = document.getElementById('midi-device-select');
+  sel.innerHTML = '';
+  if (!midiAccess.inputs.size) {
+    sel.innerHTML = '<option value="">— no devices —</option>';
+    return;
+  }
+  midiAccess.inputs.forEach((input) => {
+    const opt = document.createElement('option');
+    opt.value = input.id;
+    opt.textContent = input.name;
+    sel.appendChild(opt);
+  });
+  /* auto-select first */
+  connectMidiInput(sel.value);
+}
+
+function connectMidiInput(id) {
+  if (midiInput) midiInput.onmidimessage = null;
+  midiInput = midiAccess?.inputs.get(id);
+  if (!midiInput) return;
+  midiInput.onmidimessage = onMidiMessage;
+  setStatus('on', midiInput.name.slice(0,12));
+}
+
+document.getElementById('midi-device-select').addEventListener('change', (e) => {
+  connectMidiInput(e.target.value);
+});
+
+function onMidiMessage(msg) {
+  const [status, data1, data2] = msg.data;
+  const type    = (status >> 4) & 0xf;
+  const channel = status & 0xf;
+
+  let ev = null;
+  if (type === 0x9) {
+    ev = { type: data2>0?'note_on':'note_off', channel, key:data1, note:NOTE_NAMES[data1%12]+Math.floor(data1/12-1), velocity:data2 };
+  } else if (type === 0x8) {
+    ev = { type:'note_off', channel, key:data1, note:NOTE_NAMES[data1%12]+Math.floor(data1/12-1), velocity:0 };
+  } else if (type === 0xb) {
+    ev = { type:'cc', channel, controller:data1, value:data2 };
+  } else if (type === 0xe) {
+    ev = { type:'pitch', channel, value:((data2<<7)|data1)-8192 };
+  } else if (type === 0xc) {
+    ev = { type:'program', channel, program:data1 };
+  } else if (type === 0xd) {
+    ev = { type:'aftertouch', channel, pressure:data1 };
+  } else if (type === 0xa) {
+    ev = { type:'poly_aftertouch', channel, key:data1, note:NOTE_NAMES[data1%12]+Math.floor(data1/12-1), pressure:data2 };
+  }
+
+  if (ev) { ev._local = true; handleEvent(ev); }
+}
+
+/* ═══════════════════════════════════════════════
+   WEBRTC SIGNALING + PEER CONNECTION
+═══════════════════════════════════════════════ */
+let ws       = null;
+let pc       = null;
+let dc       = null;   /* DataChannel (outgoing) */
+let roomId   = null;
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+async function createRoom() {
+  const res = await fetch(SERVER + '/room', { method: 'POST' });
+  const { id } = await res.json();
+  roomId = id;
+  joinRoom(id, true);
+}
+
+function joinRoom(id, isHost) {
+  roomId = id;
+  const url = new URL(location.href);
+  url.searchParams.set('room', id);
+  history.replaceState({}, '', url);
+
+  document.getElementById('room-url').value = url.href;
+
+  ws = new WebSocket(`${WS_SERVER}/room/${id}`);
+  ws.onopen = () => console.log('[ws] connected to room', id);
+
+  ws.onmessage = async ({ data }) => {
+    const msg = JSON.parse(data);
+
+    if (msg.type === 'room-info') {
+      document.getElementById('peer-count').textContent = msg.peers;
+      if (msg.peers > 0) {
+        /* peers already in room — we initiate offer */
+        await createPeerConnection(true);
+      } else if (!isHost) {
+        /* we're alone, wait for peer-joined */
+      }
+      return;
+    }
+
+    if (msg.type === 'peer-joined') {
+      document.getElementById('peer-count').textContent =
+        parseInt(document.getElementById('peer-count').textContent||'0') + 1;
+      if (!pc) await createPeerConnection(true);
+      return;
+    }
+
+    if (msg.type === 'peer-left') {
+      document.getElementById('peer-count').textContent =
+        Math.max(0, parseInt(document.getElementById('peer-count').textContent||'1') - 1);
+      return;
+    }
+
+    if (msg.type === 'offer') {
+      if (!pc) await createPeerConnection(false);
+      await pc.setRemoteDescription(msg.sdp);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      wsSend({ type:'answer', sdp: pc.localDescription });
+      return;
+    }
+
+    if (msg.type === 'answer') {
+      await pc.setRemoteDescription(msg.sdp);
+      return;
+    }
+
+    if (msg.type === 'ice') {
+      try { await pc.addIceCandidate(msg.candidate); } catch {}
+      return;
+    }
+  };
+
+  ws.onerror = () => console.warn('[ws] error');
+  ws.onclose = () => console.log('[ws] closed');
+}
+
+async function createPeerConnection(initiator) {
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) wsSend({ type:'ice', candidate });
+  };
+
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    console.log('[rtc] state:', s);
+    if (s === 'connected') setRtcStatus('connected');
+    if (s === 'disconnected' || s === 'failed') setRtcStatus('');
+  };
+
+  /* receive data channel from remote */
+  pc.ondatachannel = ({ channel }) => {
+    channel.onmessage = ({ data }) => {
+      try { handleEvent(JSON.parse(data)); } catch {}
+    };
+    channel.onopen = () => setRtcStatus('connected');
+  };
+
+  if (initiator) {
+    dc = pc.createDataChannel('midi', { ordered: false, maxRetransmits: 0 });
+    dc.onopen = () => setRtcStatus('connected');
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    wsSend({ type:'offer', sdp: pc.localDescription });
+  }
+}
+
+function rtcBroadcast(ev) {
+  if (dc?.readyState === 'open') {
+    dc.send(JSON.stringify(ev));
+  }
+}
+
+function setRtcStatus(state) {
+  const badge = document.getElementById('share-btn');
+  if (state === 'connected') {
+    badge.classList.add('active');
+    badge.textContent = '⇧ live';
+  } else {
+    badge.classList.remove('active');
+    badge.textContent = '⇧ share';
+  }
+}
+
+function wsSend(obj) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+/* ═══════════════════════════════════════════════
+   UI WIRING
+═══════════════════════════════════════════════ */
+
+/* source tabs */
+document.querySelectorAll('.source-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.source-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    sourceMode = tab.dataset.source;
+    document.getElementById('file-controls').style.display = sourceMode==='file' ? 'flex' : 'none';
+    document.getElementById('live-controls').style.display = sourceMode==='live' ? 'flex' : 'none';
+    document.getElementById('midi-device-row').style.display = sourceMode==='live' ? 'block' : 'none';
+    if (sourceMode==='live' && !midiAccess) initWebMidi();
+  });
+});
+
+/* file */
+const fileInput = document.getElementById('file-input');
+const pickBtn   = document.getElementById('pick-btn');
+const playBtn   = document.getElementById('play-btn');
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0]; if (!f) return;
+  pickBtn.textContent = f.name.length>18 ? f.name.slice(0,16)+'…' : f.name;
+  playBtn.disabled = false;
+});
+
+playBtn.addEventListener('click', () => {
+  const f = fileInput.files[0]; if (!f) return;
+  playBtn.disabled = true;
+  const reader = new FileReader();
+  reader.onload = (e) => playMidi(e.target.result);
+  reader.readAsArrayBuffer(f);
+});
+
+/* MIDI connect */
+document.getElementById('midi-connect-btn').addEventListener('click', initWebMidi);
+
+/* share */
+document.getElementById('share-btn').addEventListener('click', async () => {
+  if (roomId) {
+    /* copy URL */
+    await navigator.clipboard.writeText(document.getElementById('room-url').value).catch(()=>{});
+    document.getElementById('share-btn').textContent = '✓ copied';
+    setTimeout(() => document.getElementById('share-btn').textContent = '⇧ live', 1500);
+  } else {
+    await createRoom();
+  }
+});
+
+/* copy on click */
+document.getElementById('room-url').addEventListener('click', async function() {
+  await navigator.clipboard.writeText(this.value).catch(()=>{});
+  const orig = this.style.color;
+  this.style.color = 'var(--green)';
+  setTimeout(() => this.style.color = orig, 600);
+});
+
+/* view tabs */
+document.querySelectorAll('.view-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    viewMode = tab.dataset.view;
+    pianoWrap.style.display = (viewMode==='particles' && globalConfig.piano) ? '' : 'none';
+  });
+});
+
+/* global sliders */
+[['g-decay','g-decay-val','decay'], ['g-bright','g-bright-val','brightness']].forEach(([id,vid,prop]) => {
+  const sl=document.getElementById(id), vl=document.getElementById(vid);
+  sl.addEventListener('input', () => { globalConfig[prop]=parseFloat(sl.value); vl.textContent=globalConfig[prop].toFixed(1); });
+});
+document.getElementById('g-piano').addEventListener('input', function() {
+  const on = this.value==='1';
+  globalConfig.piano = on;
+  document.getElementById('g-piano-val').textContent = on?'on':'off';
+  pianoWrap.style.display = on ? '' : 'none';
+});
+
+/* inspector */
+function buildInspector() {
+  const container = document.getElementById('type-blocks');
+  MIDI_TYPES.forEach(t => {
+    const cfg = typeConfig[t.id];
+    const block  = document.createElement('div'); block.className='type-block';
+    const header = document.createElement('div');
+    header.className = 'type-block-header'+(cfg.enabled?' active':'');
+
+    const toggle = document.createElement('button');
+    toggle.className = 'type-toggle'+(cfg.enabled?' on':'');
+    toggle.onclick = (e) => {
+      e.stopPropagation();
+      cfg.enabled = !cfg.enabled;
+      toggle.className = 'type-toggle'+(cfg.enabled?' on':'');
+      header.className = 'type-block-header'+(cfg.enabled?' active':'')+(body.classList.contains('open')?' open':'');
+    };
+
+    const name = document.createElement('span'); name.className='type-name'; name.textContent=t.label;
+    const chip = document.createElement('span'); chip.className='type-chip'; chip.style.color=t.color; chip.style.borderColor=t.color+'55'; chip.textContent=t.id.replace('_',' ');
+    const cnt  = document.createElement('span'); cnt.className='type-counter'; cnt.id='cnt-'+t.id; cnt.textContent='0';
+    const arr  = document.createElement('span'); arr.className='expand-arrow'; arr.textContent='▶';
+    header.append(toggle, name, chip, cnt, arr);
+
+    const body = document.createElement('div'); body.className='type-block-body';
+
+    /* color */
+    const cr=document.createElement('div'); cr.className='prop-row';
+    const cl=document.createElement('span'); cl.className='prop-label'; cl.textContent='color';
+    const ci=document.createElement('input'); ci.type='color'; ci.className='prop-color'; ci.value=t.color;
+    ci.oninput=()=>{ cfg.color=ci.value; };
+    cr.append(cl,ci);
+
+    /* size */
+    const sr=document.createElement('div'); sr.className='prop-row';
+    const sl2=document.createElement('span'); sl2.className='prop-label'; sl2.textContent='size';
+    const ss=document.createElement('input'); ss.type='range'; ss.className='prop-slider'; ss.min=0.2; ss.max=3; ss.step=0.1; ss.value=cfg.size;
+    const sv2=document.createElement('span'); sv2.className='prop-value'; sv2.textContent=cfg.size.toFixed(1);
+    ss.oninput=()=>{ cfg.size=parseFloat(ss.value); sv2.textContent=cfg.size.toFixed(1); };
+    sr.append(sl2,ss,sv2);
+
+    /* glow */
+    const gr=document.createElement('div'); gr.className='prop-row';
+    const gl2=document.createElement('span'); gl2.className='prop-label'; gl2.textContent='glow';
+    const gs=document.createElement('input'); gs.type='range'; gs.className='prop-slider'; gs.min=0; gs.max=3; gs.step=0.1; gs.value=cfg.glow;
+    const gv2=document.createElement('span'); gv2.className='prop-value'; gv2.textContent=cfg.glow.toFixed(1);
+    gs.oninput=()=>{ cfg.glow=parseFloat(gs.value); gv2.textContent=cfg.glow.toFixed(1); };
+    gr.append(gl2,gs,gv2);
+
+    body.append(cr,sr,gr);
+    header.onclick = () => { body.classList.toggle('open'); header.classList.toggle('open'); };
+    block.append(header,body);
+    container.appendChild(block);
+  });
+}
+buildInspector();
+
+/* ═══════════════════════════════════════════════
+   STATUS HELPERS
+═══════════════════════════════════════════════ */
+function setStatus(state, text) {
+  document.getElementById('status-dot').className = state;
+  document.getElementById('status-text').textContent = text;
+}
+
+/* ═══════════════════════════════════════════════
+   AUTO-JOIN ROOM FROM URL
+═══════════════════════════════════════════════ */
+const roomParam = new URLSearchParams(location.search).get('room');
+if (roomParam) {
+  joinRoom(roomParam, false);
+  document.getElementById('room-url').value = location.href;
+  document.getElementById('canvas-overlay').querySelector('.overlay-big').textContent = 'waiting for host…';
+}
+</script>
+</body>
+</html>
